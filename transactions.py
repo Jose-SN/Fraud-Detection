@@ -7,19 +7,29 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
-from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
-
-#import river
-from river import compose, preprocessing, linear_model, metrics
 import joblib
 import os
 import warnings
+from tqdm import tqdm
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
+
+
 warnings.filterwarnings("ignore")
 
 # Load dataset
-df_train = pd.read_csv("train_transaction.csv")
-df_identity = pd.read_csv("train_identity.csv")
+data_dir = "./assets"
+train_transaction_path = os.path.join(data_dir, "train_transaction.csv")
+train_identity_path = os.path.join(data_dir, "train_identity.csv")
+
+if not os.path.exists(train_transaction_path) or not os.path.exists(train_identity_path):
+    raise FileNotFoundError("One or both dataset files are missing. Please check the file paths.")
+
+df_train = pd.read_csv(train_transaction_path)
+df_identity = pd.read_csv(train_identity_path)
+
+# Merge datasets
 df = df_train.merge(df_identity, on="TransactionID", how="left")
 
 # Handle missing values
@@ -43,48 +53,37 @@ scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
 X_test = scaler.transform(X_test)
 
-# Train Supervised Models
+# Train Supervised Models with progress bar
 models = {
-    "Logistic Regression": LogisticRegression(),
-    "Random Forest": RandomForestClassifier(n_estimators=100),
-    "SVM": SVC(probability=True)
+    "Logistic Regression": LogisticRegression(max_iter=500),
+    "Random Forest": RandomForestClassifier(n_estimators=100, n_jobs=-1),
+    "XGBoost": XGBClassifier(use_label_encoder=False, eval_metric="logloss"),
+    "LightGBM": LGBMClassifier()
 }
 
-for name, model in models.items():
+best_model = None
+best_roc_auc = 0
+
+for name, model in tqdm(models.items(), desc="Training Models"):
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
+    roc_auc = roc_auc_score(y_test, model.predict_proba(X_test)[:, 1])
     print(f"\n{name} Evaluation:")
     print(classification_report(y_test, y_pred))
-    print("ROC AUC:", roc_auc_score(y_test, model.predict_proba(X_test)[:, 1]))
+    print("ROC AUC:", roc_auc)
 
-# Train Unsupervised Models
-print("\nUnsupervised Learning")
-kmeans = KMeans(n_clusters=2, random_state=42).fit(X_train)
-dbscan = DBSCAN().fit(X_train)
+    if roc_auc > best_roc_auc:
+        best_roc_auc = roc_auc
+        best_model = model
 
-print("K-Means Cluster Labels:", np.unique(kmeans.labels_))
-print("DBSCAN Cluster Labels:", np.unique(dbscan.labels_))
-
-# Online Learning with River
-model_river = compose.Pipeline(
-    preprocessing.StandardScaler(),
-    linear_model.LogisticRegression()
-)
-metric = metrics.Accuracy()
-
-for x, y in zip(X_train, y_train):
-    model_river = model_river.learn_one(dict(enumerate(x)), y)
-    y_pred = model_river.predict_one(dict(enumerate(x)))
-    metric = metric.update(y, y_pred)
-
-print("\nRiver Model Accuracy:", metric)
-
-# Save model for deployment
-joblib.dump(models["Random Forest"], "fraud_detection_model.pkl")
+# Save the best model
+joblib.dump(best_model, "best_fraud_detection_model.pkl")
 joblib.dump(scaler, "scaler.pkl")
+print("\nBest model saved successfully!")
 
-print("Model saved successfully!")
-
-# Load model for deployment
-model = joblib.load("fraud_detection_model.pkl")
-scaler = joblib.load("scaler.pkl")
+# Evaluate the best model on the test set
+y_pred_best = best_model.predict(X_test)
+y_pred_proba_best = best_model.predict_proba(X_test)[:, 1]
+print("\nBest Model Test Evaluation:")
+print(classification_report(y_test, y_pred_best))
+print("ROC AUC:", roc_auc_score(y_test, y_pred_proba_best))
