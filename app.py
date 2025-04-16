@@ -5,7 +5,7 @@ import pickle
 import uvicorn
 
 # Load your model
-with open("model/model.pkl", "rb") as f:
+with open("best_fraud_detection_model.pkl", "rb") as f:
     model = pickle.load(f)
 
 # Create FastAPI instance
