@@ -1,0 +1,37 @@
+
+# deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-detection-deployment # Name for the Deployment
+spec:
+  replicas: 2 # Number of application instances (Pods) to run
+  selector:
+    matchLabels:
+      app: fraud-detection # Pods with this label will be managed by this Deployment
+  template:
+    metadata:
+      labels:
+        app: fraud-detection # Label applied to the Pods created
+    spec:
+      containers:
+      - name: fraud-detection-api # Name of the container within the Pod
+        image: your-dockerhub-username/fraud-detection-api:latest # <--- REPLACE THIS with your actual image name and tag
+        ports:
+        - containerPort: 8000 # The port your app listens on inside the container (matches Dockerfile EXPOSE)
+
+--- # Separator between Kubernetes resources in the same file
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-detection-service # Name for the Service
+spec:
+  selector:
+    app: fraud-detection # Selects Pods with this label to send traffic to
+  ports:
+    - protocol: TCP
+      port: 80 # Port the Service will be accessible on within the cluster
+      targetPort: 8000 # Port on the Pods (containerPort) to forward traffic to
+  type: LoadBalancer # Or ClusterIP/NodePort depending on how you want to expose it
