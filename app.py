@@ -10,18 +10,25 @@ from dotenv import load_dotenv
 from datetime import datetime, timezone
 import os
 import pandas as pd
+import traceback
+
 
 # Load environment variables
 load_dotenv()
 MONGODB_URL = os.getenv("MONGODB_URL")
 
 # Set up logging
+# logging.basicConfig(
+#     filename="app.log",
+#     level=logging.INFO,
+#     format="%(asctime)s - %(levelname)s - %(message)s"
+# )
+
 logging.basicConfig(
     filename="app.log",
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
-
 # Load model and scaler
 try:
     model = joblib.load("best_fraud_detection_model.pkl")
@@ -90,33 +97,42 @@ def predict(transaction: Transaction):
         #     transaction.V2
         # ]])
         # input_data = np.array([[getattr(transaction, f) for f in features]])
-        input_data = pd.DataFrame([[getattr(transaction, f) for f in features]], columns=features)
+        # Prepare input data from features list
+        input_data = np.array([[getattr(transaction, f) for f in features]])
+
         # Scale input
         scaled_input = scaler.transform(input_data)
 
         # Predict
         pred = model.predict(scaled_input)[0]
         prob = model.predict_proba(scaled_input)[0][1]
-        timestamp = datetime.now(timezone.utc).isoformat()
 
+        # 🧠 Adjust threshold
+        fraud_threshold = 0.3  # You can tune this
+        is_fraud = prob > fraud_threshold
+
+        timestamp = datetime.now().astimezone().isoformat()
 
         # Store to MongoDB
         record = {
             "timestamp": timestamp,
-            "input": transaction.model_dump(),
-            "is_fraud": int(pred),
-            "fraud_probability": round(prob, 4)
+            "input": transaction.model_dump(),  # for Pydantic v2+
+            "is_fraud": int(is_fraud),
+            "fraud_probability": round(prob, 4),
+            "threshold_used": fraud_threshold
         }
         prediction_collection.insert_one(record)
 
-        logging.info(f"Prediction stored in MongoDB - Fraud: {bool(pred)}, Prob: {round(prob, 4)}")
+        # Log the output for debugging
+        logging.info(f"Prediction: {is_fraud} (Prob: {round(prob, 4)}, Threshold: {fraud_threshold})")
 
         return {
-            "is_fraud": bool(pred),
+            "is_fraud": int(is_fraud),
             "fraud_probability": round(prob, 4),
+            "threshold_used": fraud_threshold,
             "timestamp": timestamp
         }
 
     except Exception as e:
-        logging.error(f"Prediction failed: {e}")
+        logging.error(f"Prediction failed: {e}", traceback.format_exc())
         raise HTTPException(status_code=500, detail="Prediction error")
