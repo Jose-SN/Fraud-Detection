@@ -51,7 +51,7 @@ X_test_scaled = scaler.transform(X_test)
 
 #5: Model Training with Evaluation
 models = {
-    "Logistic Regression": LogisticRegression(max_iter=500),
+    "Logistic Regression": LogisticRegression(max_iter=500, class_weight="balanced"),
     "Random Forest": RandomForestClassifier(n_estimators=100, n_jobs=-1),
     "XGBoost": XGBClassifier(use_label_encoder=False, eval_metric="logloss"),
     "LightGBM": LGBMClassifier()
@@ -66,8 +66,9 @@ for name, model in models.items():
     proba = model.predict_proba(X_test_scaled)[:, 1]
     auc = roc_auc_score(y_test, proba)
     print(f"\n{name} Report:")
-    print(classification_report(y_test, y_pred))
-    print("ROC AUC:", auc)
+    # Focus on recall or F1 score for fraud class (1)
+    print(classification_report(y_test, y_pred, digits=4))
+    print("ROC AUC:", roc_auc_score(y_test, proba))
     if auc > best_score:
         best_score = auc
         best_model = model
