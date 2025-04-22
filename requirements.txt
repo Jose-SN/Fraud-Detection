@@ -1,6 +1,15 @@
 fastapi
+pytest
+httpx
 uvicorn
+pymongo
+python-dotenv
 scikit-learn
+xgboost
+lightgbm
+river
 pydantic
+tqdm
+dill
 numpy
 joblib

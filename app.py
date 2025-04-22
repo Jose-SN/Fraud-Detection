@@ -7,7 +7,9 @@ from datetime import datetime
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
 from dotenv import load_dotenv
+from datetime import datetime, timezone
 import os
+import pandas as pd
 
 # Load environment variables
 load_dotenv()
@@ -87,20 +89,21 @@ def predict(transaction: Transaction):
         #     transaction.V1,
         #     transaction.V2
         # ]])
-        input_data = np.array([[getattr(transaction, f) for f in features]])
-
+        # input_data = np.array([[getattr(transaction, f) for f in features]])
+        input_data = pd.DataFrame([[getattr(transaction, f) for f in features]], columns=features)
         # Scale input
         scaled_input = scaler.transform(input_data)
 
         # Predict
         pred = model.predict(scaled_input)[0]
         prob = model.predict_proba(scaled_input)[0][1]
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
+
 
         # Store to MongoDB
         record = {
             "timestamp": timestamp,
-            "input": transaction.dict(),
+            "input": transaction.model_dump(),
             "is_fraud": int(pred),
             "fraud_probability": round(prob, 4)
         }
