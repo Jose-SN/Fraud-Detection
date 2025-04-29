@@ -18,17 +18,12 @@ load_dotenv()
 MONGODB_URL = os.getenv("MONGODB_URL")
 
 # Set up logging
-# logging.basicConfig(
-#     filename="app.log",
-#     level=logging.INFO,
-#     format="%(asctime)s - %(levelname)s - %(message)s"
-# )
-
 logging.basicConfig(
     filename="app.log",
-    level=logging.DEBUG,
+    level=logging.INFO,#logging.DEBUG,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
+
 # Load model and scaler
 try:
     model = joblib.load("best_fraud_detection_model.pkl")
@@ -136,3 +131,56 @@ def predict(transaction: Transaction):
     except Exception as e:
         logging.error(f"Prediction failed: {e}", traceback.format_exc())
         raise HTTPException(status_code=500, detail="Prediction error")
+
+@app.post("/predict_bulk")
+def predict_bulk(transactions: list[Transaction]):
+    try:
+        # Prepare input data: extract features from each transaction in the bulk request
+        input_data = np.array([[getattr(transaction, f) for f in features] for transaction in transactions])
+
+        # Scale input data
+        scaled_input = scaler.transform(input_data)
+
+        # Predict fraud for each transaction
+        preds = model.predict(scaled_input)
+        probs = model.predict_proba(scaled_input)[:, 1]
+
+        # 🧠 Adjust threshold for fraud detection
+        fraud_threshold = 0.3
+        is_fraud = probs > fraud_threshold
+
+        # Get current timestamp
+        timestamp = datetime.now().astimezone().isoformat()
+
+        # Prepare bulk records for MongoDB
+        bulk_records = []
+        for i, transaction in enumerate(transactions):
+            record = {
+                "timestamp": timestamp,
+                "input": transaction.dict(),  # for Pydantic v2+ (or model_dump() if using older version)
+                "is_fraud": int(is_fraud[i]),
+                "fraud_probability": round(probs[i], 4),
+                "threshold_used": fraud_threshold
+            }
+            bulk_records.append(record)
+
+        # Insert bulk records into MongoDB
+        prediction_collection.insert_many(bulk_records)
+
+        # Log the output for debugging (for the first record)
+        logging.info(f"Prediction for first transaction: {is_fraud[0]} (Prob: {round(probs[0], 4)}, Threshold: {fraud_threshold})")
+
+        # Return the results for all transactions
+        return [
+            {
+                "is_fraud": int(is_fraud[i]),
+                "fraud_probability": round(probs[i], 4),
+                "threshold_used": fraud_threshold,
+                "timestamp": timestamp
+            }
+            for i in range(len(transactions))
+        ]
+
+    except Exception as e:
+        logging.error(f"Prediction failed for bulk data: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Bulk prediction error")

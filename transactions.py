@@ -25,8 +25,18 @@ df_train = pd.read_csv(train_transaction_path)
 df_identity = pd.read_csv(train_identity_path)
 df = df_train.merge(df_identity, on="TransactionID", how="left")
 
-#3: Data Cleaning
-df.fillna(-999, inplace=True)
+# 3: Data Cleaning - Handling Missing Values
+
+# Option 1: Fill missing values with -999
+df_filled = df.copy()
+df_filled.fillna(-999, inplace=True)
+
+# Option 2: Drop rows with any missing values
+df_dropped = df.copy()
+df_dropped.dropna(inplace=True)
+
+# You can later train models separately on df_filled and df_dropped
+# and compare evaluation metrics to see which approach performs better.
 
 # Label Encoding for Categorical Columns
 cat_cols = df.select_dtypes(include=['object']).columns
@@ -76,7 +86,36 @@ for name, model in models.items():
 joblib.dump(best_model, "best_fraud_detection_model.pkl")
 joblib.dump(scaler, "scaler.pkl")
 
-#6: Online Learning using River
+#6: Evaluation of Best Model
+from sklearn.metrics import precision_score, recall_score, confusion_matrix, classification_report, roc_auc_score
+
+# Predict with the best model
+y_pred_test = best_model.predict(X_test_scaled)
+y_proba_test = best_model.predict_proba(X_test_scaled)[:, 1]
+
+# Evaluation metrics
+precision = precision_score(y_test, y_pred_test)
+recall = recall_score(y_test, y_pred_test)
+roc_auc = roc_auc_score(y_test, y_proba_test)
+
+print("\nEvaluation of Best Model:")
+print(f"Precision: {precision:.4f}")
+print(f"Recall: {recall:.4f}")
+print(f"ROC AUC Score: {roc_auc:.4f}")
+
+# Confusion Matrix
+conf_matrix = confusion_matrix(y_test, y_pred_test)
+print("\nConfusion Matrix:")
+print(conf_matrix)
+
+# Visual Confusion Matrix
+sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues")
+plt.title("Confusion Matrix - Best Model")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.show()
+
+#7: Online Learning using River
 from river import preprocessing as rv_pre
 from river import compose as rv_comp
 from river import metrics as rv_metrics
@@ -103,25 +142,19 @@ print("\nRiver Online Learning:")
 print("Accuracy:", acc)
 print("ROC AUC:", rocauc)
 
-#7: Save River Model (optional for extended use)
+#8: Save River Model (optional for extended use)
 import dill
 with open("river_online_model.dill", "wb") as f:
     dill.dump(online_model, f)
 
-#8: Feature Importance Visualization (for tree models)
+
+#9: Feature Importance Visualization (for tree models)
 if hasattr(best_model, 'feature_importances_'):
     feat_imp = pd.Series(best_model.feature_importances_, index=X.columns)
     feat_imp.nlargest(20).plot(kind='barh', figsize=(10, 8))
     plt.title("Top 20 Feature Importances")
     plt.tight_layout()
     plt.show()
-
-#9: Confusion Matrix
-sns.heatmap(confusion_matrix(y_test, y_pred), annot=True, fmt="d")
-plt.title("Confusion Matrix")
-plt.xlabel("Predicted")
-plt.ylabel("Actual")
-plt.show()
 
 #10: Final Notes
 print("\nWorkflow completed successfully. Model and scaler saved. API ready for deployment.")
